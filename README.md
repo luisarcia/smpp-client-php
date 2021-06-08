@@ -36,7 +36,7 @@ $config = [
 | system_id  | 12345      | Int    | Usuario                                                      |
 | password   | 1234567890 | Int    | Contraseña                                                   |
 | ton        | 5          | Int    | Tipo de número                                               |
-| dpi        | 9          | Int    | Identificación del plan de numeración                        |
+| npi        | 9          | Int    | Identificación del plan de numeración                        |
 | command_id | 9          | Int    | Identifica el tipo de mensaje que representa la PDU SMPP. Se identifica como un "transmitter", "receiver", or "transceiver" |
 
 ##### Tipos de TON
