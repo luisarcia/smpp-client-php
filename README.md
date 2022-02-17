@@ -213,9 +213,3 @@ $smpp->send( $param );
 
 
 ------
-
-
-
-### Fork de:
-
- https://github.com/rayed/smpp_php
