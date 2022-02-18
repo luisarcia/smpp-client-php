@@ -56,7 +56,7 @@ final class PDU
 		$pduLength = $this->socket->read(4);
 
 		if( !$pduLength ) {
-			if( $debug ) Logs::write('--- Send PDU: Connection closed!. Dont read socket.');
+			if( $this->debug ) Logs::write('--- Send PDU: Connection closed!. Dont read socket.');
 
 			return false;
 		}
