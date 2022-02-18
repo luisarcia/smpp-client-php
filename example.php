@@ -7,10 +7,10 @@ use Larc\smpp\{SMSBuilder, SMPP, Debug};
 
 //Configuración del servidor
 $config = new serverConfig();
-$config->setHost();
-$config->setPort();
-$config->setSystemId();
-$config->setPassword();
+$config->setHost('127.0.0.1');
+$config->setPort('1234');
+$config->setSystemId('12345');
+$config->setPassword('54321');
 $config->setCommandId(SMPP::BIND_TRANSCEIVER);
 $config->setTon(SMPP::TON_ALPHANUMERIC);
 $config->setNpi(SMPP::NPI_PRIVATE);
