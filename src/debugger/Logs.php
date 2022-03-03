@@ -1,7 +1,7 @@
 <?php
 declare(strict_types = 1);
 
-namespace larc\smpp\debugger;
+namespace Larc\smpp\debugger;
 
 date_default_timezone_set ( 'America/Panama' );
 
