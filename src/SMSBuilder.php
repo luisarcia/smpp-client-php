@@ -1,143 +1,100 @@
 <?php
-declare(strict_types = 1);
 
-namespace Larc\smpp;
+declare(strict_types=1);
 
-use Larc\smpp\transport\{Socket};
-use Larc\smpp\{PDU, Client, Debug, Code};
-use Larc\smpp\entities\{Bulk, SMS};
+namespace Larc\SMPPClient;
 
+use Larc\SMPPClient\transport\SocketClient;
+use Larc\SMPPClient\{SMPPClient, Code};
+use Larc\SMPPClient\entities\{SMS, ServerConfig};
+use Larc\SMPPClient\debugger\TraceLogger;
+
+/**
+ * Class SMSBuilder
+ * Build SMS
+ *
+ * @package Larc\SMPPClient
+ */
 class SMSBuilder
 {
-	private $host;
-	private $port;
-	private $systemId;
-	private $password;
-	private $commandId;
-	private $ton;
-	private $npi;
-	private $timeout 	= 2; //segundo
-	private $debug 		= false;
-	private $socket;
-	private $sleep = 1 * 1000;
+    private $host;
+    private $port;
+    private $systemId;
+    private $password;
+    private $commandId;
+    private $ton;
+    private $npi;
+    private $timeout;
+    private $trace;
 
-	/**
-	 * @param object $configServer Configuración del Servidor
-	 */
-	public function __construct( object $configServer, Debug $debug = null )
-	{
-		$this->host 		= $configServer->getHost();
-		$this->port 		= $configServer->getPort();
-		$this->systemId 	= $configServer->getSystemId();
-		$this->password 	= $configServer->getPassword();
-		$this->commandId 	= $configServer->getCommandId();
-		$this->ton 			= $configServer->getTon();
-		$this->npi 			= $configServer->getNpi();
-		$this->debug 		= is_null( $debug ) ? false : $debug->state;
-	}
+    /**
+     * SMSBuilder constructor.
+     *
+     * @param ServerConfig $configServer
+     * @param int          $timeout. Default 2. Timeout in seconds
+     * @param bool         $trace
+     */
+    public function __construct(ServerConfig $configServer, int $timeout = 2, bool $trace = false)
+    {
+        $this->host = $configServer->getHost();
+        $this->port = $configServer->getPort();
+        $this->systemId = $configServer->getSystemId();
+        $this->password = $configServer->getPassword();
+        $this->commandId = $configServer->getCommandId();
+        $this->ton = $configServer->getTon();
+        $this->npi = $configServer->getNpi();
+        $this->timeout = $timeout;
+        $this->trace = filter_var($trace, FILTER_VALIDATE_BOOLEAN);
+    }
 
-	/**
-	 * Envia el SMS OnDemand
-	 * @param  SMS 	$sms 		SMS
-	 * @return array      		Response
-	 */
-	public function send( SMS $sms )
-	{
-		$socket 	= new Socket( $this->host, $this->port, $this->timeout, $this->debug );
-		$socketO	= $socket->open();
+    /**
+     * Method send
+     * Send SMS
+     *
+     * @param SMS $sms
+     *
+     * @return int
+     */
+    public function send(SMS $sms): int
+    {
+        $socket = new SocketClient($this->host, $this->port, $this->timeout, $this->trace);
+        $socketO = $socket->connect();
 
-		//Falla la conexión
-		if( !$socketO ) {
-			$socket->close();
+        // If the connection fails, the error code is returned.
+        if (!$socketO) {
+            $socket->disconnect();
+            return Code::CONNECTION_ERROR;
+        }
 
-			return [
-				'code'			=> Code::CONNECTION_ERROR,
-				'description'	=> 'Connection Error'
-			];
-		}
+        // Create a new SMPP client
+        $client = new SMPPClient($socket, $this->ton, $this->npi, SMPP::DATA_CODING_DEFAULT, $this->trace);
+        // Login to the SMPP server
+        $response = $client->login($this->commandId, $this->systemId, $this->password);
 
-		$client 	= new Client( $socket, $this->ton, $this->npi, SMPP::DATA_CODING_DEFAULT, $this->debug );
-		$response 	= $client->bind( $this->commandId, $this->systemId, $this->password );
+        $tracelogger = new TraceLogger();
+        $tracelogger->display();
 
-		//Falla el binding
-		if( !$response ) {
-			$client->unbind();
-			$socket->close();
+        // If the login fails, the connection is closed. The error code is returned.
+        if (!$response) {
+            $client->logout();
+            $socket->disconnect();
 
-			return [
-				'code'			=> Code::BINDING_ERROR,
-				'description'	=> 'Binding Error'
-			];
-		}
+            return Code::BINDING_ERROR;
+        }
 
-		$client->sendSMS(
-			$sms->getSender(),
-			$sms->getRecipient(),
-			$sms->getMessage(),
-			$sms->getFlash(),
-			$sms->getUtf()
-		);
+        // Send SMS
+        $client->sendSMS(
+            $sms->getSender(),
+            $sms->getRecipient(),
+            $sms->getMessage(),
+            $sms->getFlash(),
+            $sms->getUtf()
+        );
 
-		$client->unbind();
-		$socket->close();
+        // Logout and close connection
+        $client->logout();
+        $socket->disconnect();
 
-		return [
-			'code'			=> Code::OK,
-			'description'	=> 'OK'
-		];
-	}
-
-	/**
-	 * Envia el SMS Bulk. El texto es el mismo para todos los destinatarios.
-	 * @param  object $sms  SMS
-	 * @return array 		Response
-	 */
-	public function sendBulk( Bulk $sms )
-	{
-		$socket 	= new Socket( $this->host, $this->port, $this->timeout, $this->debug );
-		$socketO	= $socket->open();
-
-		//Falla la conexión
-		if( !$socketO ) {
-			$socket->close( $socketO );
-
-			return [
-				'code'			=> Code::CONNECTION_ERROR,
-				'description'	=> 'Connection Error'
-			];
-		}
-
-		$client 	= new Client( $socketO, $this->ton, $this->npi, SMPP::DATA_CODING_DEFAULT, $this->debug );
-		$response 	= $client->bind( $this->commandId, $this->systemId, $this->password );
-
-		//Falla el binding
-		if( !$response ) {
-			$client->unbind();
-			$socket->close( $socketO );
-
-			return [
-				'code'			=> Code::BINDING_ERROR,
-				'description'	=> 'Binding Error'
-			];
-		}
-
-		for ($i=0; $i < count($sms->getRecipient()); $i++) { 
-			$client->sendSMS(
-				$sms->getSender(),
-				$sms->getRecipient()[$i],
-				$sms->getMessage(),
-				$sms->getFlash(),
-				$sms->getUtf()
-			);
-		}
-
-		$client->unbind();
-		$socket->close( $socketO );
-
-		return [
-			'code'			=> Code::OK,
-			'description'	=> 'OK'
-		];
-	}
+        return Code::OK;
+    }
 }
-?>

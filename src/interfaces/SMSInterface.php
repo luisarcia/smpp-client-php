@@ -1,9 +1,13 @@
 <?php
 declare(strict_types = 1);
 
-namespace Larc\smpp\interfaces;
+namespace Larc\SMPPClient\interfaces;
 
-interface SMSInterface {
+/**
+ * SmsInterface
+ */
+interface SmsInterface
+{
 
     public function getSender();
 
@@ -25,4 +29,3 @@ interface SMSInterface {
 
     public function setUtf(bool $utf);
 }
-?>

@@ -1,17 +1,24 @@
 <?php
+
 declare(strict_types = 1);
 
-namespace Larc\smpp\entities;
+namespace Larc\SMPPClient\entities;
 
-class serverConfig implements \Larc\smpp\interfaces\serverConfigInterface
+use Larc\SMPPClient\interfaces\ServerConfigInterface;
+
+/**
+ * ServerConfig
+ * Model of ServerConfig.
+ */
+class ServerConfig implements ServerConfigInterface
 {
-	private $host; //IP del servidor
-	private $port; //Puerto
-	private $systemId; //Usuario
-	private $password; //Password
-	private $commandId; //transmitter (TX), receiver (RX) o transceiver (TRX)
-	private $ton; //TON
-	private $npi; //NPI
+    private $host; //IP del servidor
+    private $port; //Puerto
+    private $systemId; //Usuario
+    private $password; //Password
+    private $commandId; //transmitter (TX), receiver (RX) o transceiver (TRX)
+    private $ton; //TON
+    private $npi; //NPI
 
     /**
      * @return mixed
@@ -153,5 +160,3 @@ class serverConfig implements \Larc\smpp\interfaces\serverConfigInterface
         return $this;
     }
 }
-
-?>

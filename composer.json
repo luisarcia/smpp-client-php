@@ -1,7 +1,7 @@
 {
     "name": "larc/smpp-client-php",
     "description": "Permite realizar envíos de SMS por el protocolo SMPP. v3.4",
-    "version": "2.0.2",
+    "version": "2.1.0",
     "type": "library",
     "license": "MIT",
     "authors": [
@@ -17,7 +17,7 @@
     },
     "autoload": {
         "psr-4": {
-            "Larc\\smpp\\": "src/"
+            "Larc\\SMPPClient\\": "src/"
         }
     }
 }

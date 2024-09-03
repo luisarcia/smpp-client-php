@@ -1,131 +1,109 @@
 <?php
-declare(strict_types = 1);
 
-namespace Larc\smpp;
+declare(strict_types=1);
 
-use Larc\smpp\SMPP;
-use Larc\smpp\debugger\Logs;
+namespace Larc\SMPPClient;
 
+use Larc\SMPPClient\SMPP;
+use Larc\SMPPClient\debugger\TraceLogger;
+
+/**
+ * Class PDU
+ * Builds and reads PDU packets
+ *
+ * @package Larc\SMPPClient
+ */
 final class PDU
 {
-	private $socket;
-	private $commandStatus;
-	private $debug;
+    private $commandStatus = 0;
+    private $trace;
 
-	/**
-	 * @param [type]      $socket        Socket establecido
-	 * @param int|integer $commandStatus Status del CommandStatus. Default: 0
-	 */
-	function __construct( $socket, int $commandStatus = 0, bool $debug = false )
-	{
-		$this->socket 			= $socket;
-		$this->commandStatus 	= $commandStatus;
-		$this->debug 			= $debug;
-	}
+    /**
+     * @param bool $trace Enable tracing
+     */
+    public function __construct(bool $trace = false)
+    {
+        $this->trace = new TraceLogger($trace);
+    }
 
-	/**
-	 * Envia los comandos
-	 * @param  [type] $commandId     	Comando ID
-	 * @param  string $data          	Data que se quiere enviar
-	 * @param  int    $sequenceNumber	Número sequencial para correlacionar
-	 * @return [type] 
-	 */
-	public function send( $commandId, string $data, int $sequenceNumber)
-	{
-		if(!is_null($this->socket)) {
-			//PDU Header P: 39
-			$length 	= strlen($data) + 16;
-			$PDUHeader 	= pack('NNNN', $length, $commandId, $this->commandStatus, $sequenceNumber  );
-			$PDUBody 	= $data;
+    /**
+     * Builds a PDU packet with header and body
+     *
+     * @param int $commandId Command ID for the PDU
+     * @param string $data Data to be included in the PDU body
+     * @param int $sequenceNumber Sequence number for the PDU
+     *
+     * @return string|null The constructed PDU packet or null on failure
+     */
+    public function buildPduPacket(int $commandId, string $data, int $sequenceNumber): ?string
+    {
+        // PDU Header length is 16 bytes
+        $length = strlen($data) + 16;
+        $pduHeader = pack('NNNN', $length, $commandId, $this->commandStatus, $sequenceNumber);
+        $pduBody = $data;
 
-			$PDU 		= $PDUHeader . $PDUBody;
+        $pduPacket = $pduHeader . $pduBody;
 
-			//Send PDU
-			$this->socket->write($PDU);
+        $this->trace->write('--- Constructed PDU packet: ' . bin2hex($pduPacket));
 
-			return true;
-		}
+        return $pduPacket;
+    }
 
-		return null;
-	}
+    /**
+     * Reads and parses the PDU header
+     * 
+     * @param string $pduHeader The PDU header
+     * 
+     * @return object The parsed PDU response
+     */
+    public function read(string $pduHeader): object
+    {
+        // Validates that the PDU header length is at least 16 bytes long (4 integers)
+        $headerLength = strlen($pduHeader);
 
+        if ($headerLength < 16) {
+            $this->trace->write('--- Error: PDU header too short. Length: ' . $headerLength);
 
-	public function read()
-	{
-		// Read PDU length
-		$pduLength = $this->socket->read(4);
+            return (object)[
+                'commandId' => 0,
+                'commandStatus' => 'Error',
+                'sequenceNumber' => 0,
+                'body' => ''
+            ];
+        }
 
-		if( !$pduLength ) {
-			if( $this->debug ) Logs::write('--- Send PDU: Connection closed!. Dont read socket.');
+        // parse the PDU header
+        $headerData = unpack('Nlength/Ncommand_id/Ncommand_status/Nsequence_number', substr($pduHeader, 0, 16));
 
-			return false;
-		}
+        if ($headerData === false) {
+            $this->trace->write('--- Error unpacking PDU header.');
+            return (object)[
+                'commandId' => 0,
+                'commandStatus' => 'Error',
+                'sequenceNumber' => 0,
+                'body' => ''
+            ];
+        }
 
-		 /**
-		 * extraction define next variables:
-		 * @var $length
-		 * @var $command_id
-		 * @var $command_status
-		 * @var $sequence_number
-		 */
+        $length = $headerData['length'];
+        $commandId = $headerData['command_id'];
+        $commandStatus = $headerData['command_status'];
+        $sequenceNumber = $headerData['sequence_number'];
 
-		extract(unpack('Nlength', $pduLength));
+        // Read the PDU body from the remaining part of the PDU packet
+        $pduBody = '';
 
-		// Read PDU headers
-		$pduHeader = $this->socket->read(12);
+        if ($length > 16) {
+            $pduBody = substr($pduHeader, 16, $length - 16);
+        }
 
-		if( !$pduHeader ) {
-			if( $debug ) Logs::write('--- Send PDU: Connection closed!. Dont read socket.');
+        $this->trace->write("<<< PDU response [command_id: {$commandId}, status: {$commandStatus}, sequence_number: {$sequenceNumber}, body: " . bin2hex($pduBody) . "]");
 
-			return false;
-		}
-
-		extract(unpack('Ncommand_id/Ncommand_status/Nsequence_number', $pduHeader));
-
-		
-
-
-		$command_id			= $command_id;
-		$command_status 	= SMPP::getStatusMessage( $command_status);
-		$sequence_number	= $sequence_number;
-
-		//Read PDU body
-		if( $length - 16 > 0 ) {
-			$pduBody = $this->socket->read( $length - 16 );
-			if( !$pduBody ) $pduBody = '';
-		}else{
-			$pduBody = '';
-		}
-
-		/*if( dechex($command_id) == 80000004 ) {
-			var_dump( $pduBody );
-		}*/
-
-		if( $this->debug ) Logs::write( "<<< PDU response [command_id: {$command_id}, status: {$command_status}, sequence_number: {$sequence_number}, body: {$pduBody}]");
-
-		return [
-			'command_id'		=> $command_id,
-			'command_status'	=> $command_status,
-			'sequence_number'	=> $sequence_number,
-			'body'				=> $pduBody
-		];
-	}
-
-	/**
-	 * Muestra valor hexagesimal
-	 * @param  string $pdu PDU
-	 * @return void
-	 */
-	private function printHex( $pdu ): void
-	{
-		$ar=unpack("C*",$pdu);
-
-		foreach($ar as $v){
-			$s=dechex($v);
-			if(strlen($s)<2)$s="0$s";
-			print "$s ";
-		}
-		print "\n";
-	}
+        return (object)[
+            'commandId' => $commandId,
+            'commandStatus' => SMPP::getStatusMessage($commandStatus),
+            'sequenceNumber' => $sequenceNumber,
+            'body' => $pduBody
+        ];
+    }
 }
-?>
