@@ -8,7 +8,6 @@ namespace Larc\SMPPClient\interfaces;
  */
 interface SmsInterface
 {
-
     public function getSender();
 
     public function setSender(string $sender);
