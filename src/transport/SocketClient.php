@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Larc\SMPPClient\transport;
+namespace Larc\SMPPClient\Transport;
 
 use Larc\SMPPClient\debugger\TraceLogger;
-use Larc\SMPPClient\exceptions\SocketException;
-use Larc\SMPPClient\interfaces\ConnectionInterface;
+use Larc\SMPPClient\Exception\SocketException;
+use Larc\SMPPClient\Interfaces\ConnectionInterface;
 
 /**
  * Class SocketClient
@@ -16,11 +16,11 @@ use Larc\SMPPClient\interfaces\ConnectionInterface;
  */
 class SocketClient implements ConnectionInterface
 {
-    private $host;
-    private $port;
-    private $timeout;
-    private $socket;
-    private $trace;
+    private string $host;
+    private int $port;
+    private int $timeout;
+    private $socket = null;
+    private ?TraceLogger $trace;
 
     /**
      * Method __construct
@@ -37,111 +37,163 @@ class SocketClient implements ConnectionInterface
         $this->host = $host;
         $this->port = $port;
         $this->timeout = $timeout;
-        $this->trace = new TraceLogger($trace);
+        $this->trace = $trace ? new TraceLogger(true) : null;
     }
-    
+
     /**
      * Method connect
-     * Conecta al servidor SMPP
+     * Establishes a socket connection to the SMPP server
      *
-     * @return Resource Socket
+     * @return void
      */
-    public function connect()
+    public function connect(): void
     {
-        try {
-            $this->socket = @fsockopen($this->host, $this->port, $errno, $errstr, $this->timeout);
-
-            if ($this->socket === false) {
-                throw new SocketException("Unable to establish socket connection: $errstr", $errno);
-            }
-
-            if (function_exists('stream_set_timeout')) {
-                stream_set_timeout($this->socket, $this->timeout);
-            }
-
-            $this->trace->write('>>> Connected Socket');
-
-            return $this->socket;
-
-        } catch (\Throwable $th) {
-            throw new SocketException("An error occurred while opening the socket: " . $th->getMessage(), $th->getCode(), $th);
+        if ($this->socket !== null) {
+            return; // Already connected
         }
+
+        $socket = null;
+
+        set_error_handler(function ($message) {
+            throw new SocketException("PHP socket error: $message");
+        });
+
+        try {
+            $socket = fsockopen($this->host, $this->port, $errno, $errstr, $this->timeout);
+
+            if ($socket === false) {
+                throw new SocketException(
+                    "Unable to establish socket connection: $errstr",
+                    $errno
+                );
+            }
+
+            stream_set_timeout($socket, $this->timeout);
+        } catch (\Throwable $e) {
+            throw new SocketException(
+                "Socket connection failed: " . $e->getMessage(),
+                (int) $e->getCode(),
+                $e
+            );
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->socket = $socket;
+        $this->trace?->write('>>> Connected Socket');
     }
-    
+
     /**
      * Method send
-     * Envia un PDU al servidor SMPP
+     * Sends a PDU to the SMPP server
      *
-     * @param string $pdu PDU a enviar
+     * @param string $pdu The PDU to be sent
      *
      * @return void
      */
     public function send(string $pdu): void
     {
-        $writed = @fwrite($this->socket, $pdu);
-
-        if ($writed === false) {
-            $this->trace->write('--- PDU send error');
-            throw new SocketException('Failed to send PDU.');
+        if ($this->socket === null) {
+            throw new SocketException('Socket is not connected.');
         }
 
-        $this->trace->write('>>> PDU Sent');
+        $length = strlen($pdu);
+        $written = 0;
+
+        while ($written < $length) {
+            $result = fwrite($this->socket, substr($pdu, $written));
+
+            if ($result === false) {
+                $this->trace?->write('--- PDU send error');
+                throw new SocketException('Failed to send PDU.');
+            }
+
+            $written += $result;
+        }
+
+        $this->trace?->write('>>> PDU Sent (' . $length . ' bytes)');
     }
 
     /**
      * Method receive
-     * Recibe un PDU del servidor SMPP
+     * Receives a PDU from the SMPP server
      *
-     * @param int $length Longitud del PDU a recibir
+     * @param int $length The length of the PDU to receive
      *
      * @return string
      */
-    public function receive(int $length)
+    public function receive(): string
     {
-        $readed = @fread($this->socket, $length);
-
-        if ($readed === false) {
-            $this->trace->write('--- PDU receive error');
-            throw new SocketException('Failed to receive PDU.');
+        if ($this->socket === null) {
+            throw new SocketException('Socket is not connected.');
         }
 
-        $this->trace->write('<<< PDU received');
+        $data = '';
+        $read = 0;
 
-        return $readed;
-    }
-    
-    /**
-     * Method disconnect
-     * Desconecta del servidor SMPP
-     *
-     * @return bool
-     */
-    public function disconnect(): bool
-    {
-        if ($this->socket !== null) {
-            if ($this->socket) {
-                @fclose($this->socket);
-                $this->socket = null;
+        while ($read < 16) {
+            if (feof($this->socket)) {
+                throw new SocketException('Socket connection closed by remote host.');
             }
 
-            $this->trace->write('>>> Disconnected Socket');
+            $chunk = fread($this->socket, 16 - $read);
 
-            return true;
+            if ($chunk === false) {
+                $this->trace?->write('--- PDU receive error');
+                throw new SocketException('Failed to receive PDU.');
+            }
+
+            $info = stream_get_meta_data($this->socket);
+            if ($info['timed_out']) {
+                $this->trace?->write('--- Socket read timeout');
+                throw new SocketException('Socket read timeout.');
+            }
+
+            if ($chunk === '') {
+                // evita loop infinito
+                usleep(1000);
+                continue;
+            }
+
+            $data .= $chunk;
+            $read = strlen($data);
         }
 
-        $this->trace->write('--- Socket was already disconnected!');
+        $this->trace?->write('<<< PDU received (' . $read . ' bytes)');
 
-        return false;
+        return $data;
+    }
+
+
+    /**
+     * Method disconnect
+     * Disconnects from the SMPP server
+     *
+     * @return void
+     */
+    public function disconnect(): void
+    {
+        if ($this->socket !== null) {
+            fclose($this->socket);
+            $this->socket = null;
+            $this->trace?->write('>>> Disconnected Socket');
+        }
     }
 
     /**
      * Method reconnect
-     * Reconecta al servidor SMPP
+     * Reconnects to the SMPP server
      *
      * @return void
      */
     public function reconnect(): void
     {
+        if ($this->socket === null) {
+            $this->connect();
+            return;
+        }
+
+        $this->trace?->write('>>> Reconnecting Socket');
         $this->disconnect();
         $this->connect();
     }

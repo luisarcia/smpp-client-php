@@ -29,7 +29,9 @@ class TraceLogger
     public function write(string $message): void
     {
         if ($this->traceEnabled) {
-            $this->messages[] = date('Y-m-d H:i:s') . " - " . $message;
+            $formattedMessage = date('Y-m-d H:i:s') . " - " . $message;
+            $this->messages[] = $formattedMessage;
+            echo $formattedMessage . PHP_EOL;
         }
     }
 
@@ -42,11 +44,9 @@ class TraceLogger
     public function display(): void
     {
         if ($this->traceEnabled && !empty($this->messages)) {
-            echo '<pre style="background: #FAFAFA; color: #001950; border-radius: 10px; padding: 10px">';
             foreach ($this->messages as $message) {
-                echo $message . "\n";
+                echo $message . PHP_EOL;
             }
-            echo "</pre>";
         }
     }
 
@@ -92,5 +92,16 @@ class TraceLogger
     public function getState() : bool
     {
         return $this->traceEnabled;
+    }
+
+    /**
+     * Method getMessages
+     * Get all trace messages
+     *
+     * @return array
+     */
+    public function getMessages(): array
+    {
+        return $this->messages;
     }
 }

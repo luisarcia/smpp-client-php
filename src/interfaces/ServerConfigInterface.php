@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Larc\SMPPClient\interfaces;
+namespace Larc\SMPPClient\Interfaces;
 
 /**
  * ServerConfigInterface

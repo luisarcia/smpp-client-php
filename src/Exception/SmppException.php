@@ -2,26 +2,24 @@
 
 declare(strict_types=1);
 
-namespace Larc\SMPPClient\exceptions;
-
-use \Exception;
+namespace Larc\SMPPClient\Exception;
 
 /**
- * SocketException
+ * SmppException
+ * Una excepción personalizada para errores relacionados con SMPP.
+ * @package Larc\SMPPClient\Exception
  */
-class SocketException extends Exception
+class SmppException extends \Exception
 {
     /**
      * Mensaje de error personalizado para la conexión del socket.
      *
      * @param string $message El mensaje de error.
      * @param int $code El código de error (opcional).
-     * @param Exception|null $previous Excepción anterior usada para encadenamiento (opcional).
      */
-    public function __construct(string $message, int $code = 0, Exception $previous = null)
+    public function __construct(string $message, int $code = 0)
     {
-        // Llamar al constructor de la clase base.
-        parent::__construct($message, $code, $previous);
+        parent::__construct($message, $code);
     }
 
     /**
