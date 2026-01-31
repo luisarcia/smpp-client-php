@@ -11,7 +11,7 @@ final class Ucs2Encoding implements EncodingStrategy
 {
     public function encode(string $message): string
     {
-        return mb_convert_encoding($message, 'UCS-2BE', 'UTF-8');
+        return mb_convert_encoding($message, "UCS-2BE", "UTF-8");
     }
 
     public function singleLimit(): int

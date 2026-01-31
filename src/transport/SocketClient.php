@@ -12,7 +12,7 @@ use Larc\SMPPClient\Interfaces\ConnectionInterface;
  * Class SocketClient
  * Implementations of the ConnectionInterface interface for socket connections.
  *
- * @package Larc\SMPPClient\transport
+ * @package Larc\SMPPClient\Transport
  */
 class SocketClient implements ConnectionInterface
 {
@@ -25,10 +25,10 @@ class SocketClient implements ConnectionInterface
     /**
      * Method __construct
      *
-     * @param string $host Dirección IP o DNS del servidor SMPP
-     * @param int $port Puerto del servidor SMPP
-     * @param int $timeout Tiempo de espera en segundos
-     * @param bool $trace Habilitar traza
+     * @param string $host Host of the SMPP server
+     * @param int $port Port of the SMPP server
+     * @param int $timeout Timeout in seconds
+     * @param bool $trace Enable trace
      *
      * @return void
      */
@@ -49,11 +49,12 @@ class SocketClient implements ConnectionInterface
     public function connect(): void
     {
         if ($this->socket !== null) {
-            return; // Already connected
+            return;
         }
 
         $socket = null;
 
+        // Handle PHP socket errors as exceptions
         set_error_handler(function ($message) {
             throw new SocketException("PHP socket error: $message");
         });
@@ -122,56 +123,57 @@ class SocketClient implements ConnectionInterface
      *
      * @return string
      */
-public function receive(): string
-{
-    if ($this->socket === null) {
-        throw new SocketException('Socket is not connected.');
-    }
-
-    $data = '';
-
-    // leer lo que haya disponible (TCP stream)
-    while (true) {
-
-        if (feof($this->socket)) {
-            throw new SocketException('Socket closed by remote host.');
+    public function receive(): string
+    {
+        // validate socket connection
+        if ($this->socket === null) {
+            throw new SocketException('Socket is not connected.');
         }
 
-        $chunk = fread($this->socket, 8192);
+        // initialize data buffer
+        $data = '';
 
-        if ($chunk === false) {
-            throw new SocketException('Failed to receive data from socket.');
-        }
-
-        if ($chunk === '') {
-            $meta = stream_get_meta_data($this->socket);
-
-            if ($meta['timed_out']) {
-                break; // no más datos por ahora
+        // Read data until we have something or timeout occurs (TCP is a stream protocol)
+        while (true) {
+            // validate if socket is still open
+            if (feof($this->socket)) {
+                throw new SocketException('Socket closed by remote host.');
             }
 
-            usleep(1000);
-            continue;
+            // read available data from socket (buffered read)
+            $chunk = fread($this->socket, 8192);
+
+            if ($chunk === false) {
+                throw new SocketException('Failed to receive data from socket.');
+            }
+
+            if ($chunk === '') {
+                $meta = stream_get_meta_data($this->socket);
+
+                if ($meta['timed_out']) {
+                    break; // no more data for now
+                }
+
+                // no data available yet, wait a bit
+                usleep(1000);
+                continue;
+            }
+
+            // append received chunk to data
+            $data .= $chunk;
+
+            // prevent infinite loop in case of malformed data
+            if (strlen($data) > 1024 * 1024) {
+                throw new SocketException('Too much data without valid PDU');
+            }
+
+            break;
         }
 
-        $data .= $chunk;
+        $this->trace?->write('<<< TCP data received (' . strlen($data) . ' bytes)');
 
-        // si llegó algo, salimos (PDU::feed decide si está completo)
-        // if (strlen($data) > 0) {
-        //     break;
-        // }
-
-        if (strlen($data) > 1024 * 1024) {
-            throw new SocketException('Too much data without valid PDU');
-        }
-
-        break;
+        return $data;
     }
-
-    $this->trace?->write('<<< TCP data received (' . strlen($data) . ' bytes)');
-
-    return $data;
-}
 
 
     /**
@@ -205,5 +207,27 @@ public function receive(): string
         $this->trace?->write('>>> Reconnecting Socket');
         $this->disconnect();
         $this->connect();
+    }
+
+    /**
+     * Method getTimeout
+     * Gets the socket timeout value
+     *
+     * @return int
+     */
+    public function getTimeout(): int
+    {
+        return $this->timeout;
+    }
+
+    /**
+     * Method isConnected
+     * Checks if the socket is connected
+     *
+     * @return bool
+     */
+    public function isConnected(): bool
+    {
+        return $this->socket !== null;
     }
 }

@@ -7,14 +7,16 @@ ini_set('display_errors', '1');
 
 use Larc\SMPPClient\Client\SMPPClient;
 use Larc\SMPPClient\Config\ServerConfigBuilder;
+use Larc\SMPPClient\Exception\ProtocolException;
 use Larc\SMPPClient\SMPP;
 
 $config = ServerConfigBuilder::transceiver()
     ->withHost('127.0.0.1')
     ->withPort(2776)
     ->withCredentials('CLIENT1', '00000000')
-    ->withTon(SMPP::TON_INTERNATIONAL)
-    ->withNpi(SMPP::NPI_E164)
+    ->withAddrTon(SMPP::TON_INTERNATIONAL) // Optional, default is TON_INTERNATIONAL
+    ->withAddrNpi(SMPP::NPI_E164) // Optional, default is NPI_E164
+
     ->build();
 
 $smppClient = new SMPPClient($config);
@@ -24,22 +26,17 @@ if (!$smppClient->login()) {
     die("Login failed!");
 }
 
-// $smppClient->from('Weblarc')
-//            ->to('50766207383')
-//            ->asUtf8()
-//            ->asFlash()
-//            ->message('Hello, this is a test message!')
-//            ->send();
-
-$smppClient->from('50766207384')
-           ->to('50766207383')
-           ->message('Second test message')
-           ->send();
-
-var_dump($smppClient->getLastMessageId());
+$smppClient->from('Weblarc')
+    ->fromTon(SMPP::TON_ALPHANUMERIC)
+    ->fromNpi(SMPP::NPI_UNKNOWN)
+    ->to('50760001000')
+    ->message('Test message')
+    ->send();
 
 try {
     $smppClient->logout();
-} catch (\Larc\SMPPClient\Exception\ProtocolException $e) {
+} catch (ProtocolException $e) {
     echo "Warning: UNBIND failed\n";
 }
+
+echo '📩 MessageId: ' . $smppClient->getLastMessageId() . "\n";

@@ -3,6 +3,7 @@
 namespace Larc\SMPPClient\Config;
 
 use Larc\SMPPClient\Exception\InvalidConfigException;
+use Larc\SMPPClient\SMPP;
 
 /**
  * ServerConfig
@@ -15,12 +16,13 @@ final class ServerConfig
     private int $port;
     private string $systemId;
     private string $password;
+    private int $bindType;
     private ?string $systemType;
     private int $interfaceVersion;
-    private int $ton;
-    private int $npi;
     private ?string $addressRange;
-    private int $bindType;
+    private int $addrTon;
+    private int $addrNpi;
+    private int $timeout;
 
     public function __construct(array $config)
     {
@@ -30,12 +32,22 @@ final class ServerConfig
         $this->port = $config['port'];
         $this->systemId = $config['systemId'];
         $this->password = $config['password'];
+        $this->bindType = $config['bindType'];
         $this->systemType = $config['systemType'];
         $this->interfaceVersion = $config['interfaceVersion'];
-        $this->ton = $config['ton'];
-        $this->npi = $config['npi'];
         $this->addressRange = $config['addressRange'];
-        $this->bindType = $config['bindType'];
+        $this->addrTon = $config['addrTon'] ?? \Larc\SMPPClient\SMPP::TON_INTERNATIONAL;
+        $this->addrNpi = $config['addrNpi'] ?? \Larc\SMPPClient\SMPP::NPI_E164;
+        $this->timeout = $config['timeout'] ?? 5;
+    }
+    public function addrTon(): int
+    {
+        return $this->addrTon;
+    }
+
+    public function addrNpi(): int
+    {
+        return $this->addrNpi;
     }
 
     public function host(): string
@@ -58,6 +70,11 @@ final class ServerConfig
         return $this->password;
     }
 
+    public function bindType(): int
+    {
+        return $this->bindType;
+    }
+
     public function systemType(): ?string
     {
         return $this->systemType;
@@ -68,24 +85,14 @@ final class ServerConfig
         return $this->interfaceVersion;
     }
 
-    public function ton(): int
-    {
-        return $this->ton;
-    }
-
-    public function npi(): int
-    {
-        return $this->npi;
-    }
-
     public function addressRange(): ?string
     {
         return $this->addressRange;
     }
 
-    public function bindType(): int
+    public function timeout(): int
     {
-        return $this->bindType;
+        return $this->timeout;
     }
 
     private function validateConfig(array $config): void
@@ -104,6 +111,20 @@ final class ServerConfig
 
         if (empty($config['password'])) {
             throw new InvalidConfigException('Password is required in ServerConfig');
+        }
+
+        if (!isset($config['bindType']) || !in_array($config['bindType'], [
+            SMPP::BIND_TRANSMITTER,
+            SMPP::BIND_RECEIVER,
+            SMPP::BIND_TRANSCEIVER
+        ], true)) {
+            throw new InvalidConfigException('Invalid bind type in ServerConfig');
+        }
+
+        if (!isset($config['interfaceVersion']) || !in_array($config['interfaceVersion'], [
+            SMPP::SMPP_3_4
+        ], true)) {
+            throw new InvalidConfigException('Invalid interface version in ServerConfig');
         }
     }
 }

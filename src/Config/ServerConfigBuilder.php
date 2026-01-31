@@ -17,12 +17,13 @@ final class ServerConfigBuilder
     private int $port = 2775;
     private ?string $systemId = null;
     private ?string $password = null;
-    private ?string $systemType = null;
-    private int $interfaceVersion = 0x34;
-    private int $ton = 0;
-    private int $npi = 0;
-    private ?string $addressRange = null;
     private int $bindType = SMPP::BIND_TRANSCEIVER;
+    private ?string $systemType = 'SMPP';
+    private int $interfaceVersion = SMPP::SMPP_3_4;
+    private ?string $addressRange = null;
+    private int $addrTon = SMPP::TON_INTERNATIONAL;
+    private int $addrNpi = SMPP::NPI_E164;
+    private int $timeout = 5;
 
     private function __construct(int $bindType = SMPP::BIND_TRANSCEIVER)
     {
@@ -127,32 +128,6 @@ final class ServerConfigBuilder
     }
 
     /**
-     * Method withton
-     *
-     * @param int $ton type of number
-     *
-     * @return self
-     */
-    public function withTon(int $ton): self
-    {
-        $this->ton = $ton;
-        return $this;
-    }
-
-    /**
-     * Method withNpi
-     *
-     * @param int $npi numbering plan indicator
-     *
-     * @return self
-     */
-    public function withNpi(int $npi): self
-    {
-        $this->npi = $npi;
-        return $this;
-    }
-
-    /**
      * Method withAddressRange
      *
      * @param string|null $range address range
@@ -162,6 +137,45 @@ final class ServerConfigBuilder
     public function withAddressRange(?string $range): self
     {
         $this->addressRange = $range;
+        return $this;
+    }
+
+    /**
+     * Method withAddrTon
+     *
+     * @param int $ton address TON
+     *
+     * @return self
+     */
+    public function withAddrTon(int $ton): self
+    {
+        $this->addrTon = $ton;
+        return $this;
+    }
+
+    /**
+     * Method withAddrNpi
+     *
+     * @param int $npi address NPI
+     *
+     * @return self
+     */
+    public function withAddrNpi(int $npi): self
+    {
+        $this->addrNpi = $npi;
+        return $this;
+    }
+
+    /**
+     * Method withTimeout
+     *
+     * @param int $timeout timeout in seconds
+     *
+     * @return self
+     */
+    public function withTimeout(int $timeout): self
+    {
+        $this->timeout = $timeout;
         return $this;
     }
 
@@ -177,12 +191,13 @@ final class ServerConfigBuilder
             'port' => $this->port,
             'systemId' => $this->systemId,
             'password' => $this->password,
+            'bindType' => $this->bindType,
             'systemType' => $this->systemType,
             'interfaceVersion' => $this->interfaceVersion,
-            'ton' => $this->ton,
-            'npi' => $this->npi,
             'addressRange' => $this->addressRange,
-            'bindType' => $this->bindType
+            'addrTon' => $this->addrTon,
+            'addrNpi' => $this->addrNpi,
+            'timeout' => $this->timeout,
         ]);
     }
 }

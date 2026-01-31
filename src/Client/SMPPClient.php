@@ -16,6 +16,7 @@ use Larc\SMPPClient\Exception\SmppException;
 use Larc\SMPPClient\PDU\PDUResponse;
 use Larc\SMPPClient\Protocol\Message\MessageSplitter;
 use Larc\SMPPClient\Protocol\SubmitSm;
+use Larc\SMPPClient\Protocol\SubmitSmParams;
 use Larc\SMPPClient\Transport\SocketClient;
 
 final class SMPPClient
@@ -23,8 +24,8 @@ final class SMPPClient
     private ConnectionInterface $socket;
     private string $systemId;
     private string $password;
-    private int $ton;
-    private int $npi;
+    private int $addrTon;
+    private int $addrNpi;
     private int $commandId;
     private SequenceGenerator $sequence;
     private TraceLogger $trace;
@@ -39,11 +40,17 @@ final class SMPPClient
 
     public function __construct(ServerConfig $config)
     {
-        $this->socket = new SocketClient($config->host(), $config->port(), 10, false);
+        $this->socket = new SocketClient(
+            $config->host(),
+            $config->port(),
+            $config->timeout(),
+            false
+        );
+
         $this->systemId = $config->systemId();
         $this->password = $config->password();
-        $this->ton = $config->ton();
-        $this->npi = $config->npi();
+        $this->addrTon = $config->addrTon();
+        $this->addrNpi = $config->addrNpi();
         $this->commandId = $config->bindType();
         $this->sequence = new SequenceGenerator();
         $this->trace = new TraceLogger();
@@ -59,20 +66,21 @@ final class SMPPClient
     {
         $this->socket->connect();
 
-        $data  = sprintf("%s\0%s\0", $this->systemId, $this->password);
-        $data .= sprintf("%s\0%c", 'SMPP', SMPP::SMPP_3_4);
-        $data .= sprintf("%c%c\0", $this->ton, $this->npi);
+        // Build BIND PDU body
+        $data  = sprintf("%s\0%s\0", $this->systemId, $this->password); // system_id, password
+        $data .= sprintf("%s\0%c", 'SMPP', SMPP::SMPP_3_4); // system_type, interface_version
+        $data .= sprintf("%c%c%s\0", $this->addrTon, $this->addrNpi, ''); // addr_ton, addr_npi, address_range
 
         $response = $this->sendCommand($this->commandId, $data);
 
-        if ($response->commandStatus === SMPP::ESME_ROK) {
-            $this->trace->write('>>> Bind OK');
-            return true;
+        if ($response->commandStatus !== SMPP::ESME_ROK) {
+            return false;
         }
 
-        return false;
+        $this->trace->write('>>> Bind OK');
+        return true;
     }
-    
+
     /**
      * Method logout
      * Closes the SMPP connection by sending an UNBIND request
@@ -101,6 +109,34 @@ final class SMPPClient
     public function from(string $sender): self
     {
         $this->currentSender = $sender;
+        return $this;
+    }
+
+    /**
+     * Method fromTon
+     * Sets the TON (Type of Number) for the sender
+     *
+     * @param int $ton Type of Number
+     *
+     * @return self
+     */
+    public function fromTon(int $ton): self
+    {
+        $this->addrTon = $ton;
+        return $this;
+    }
+
+    /**
+     * Method fromNpi
+     * Sets the NPI (Numbering Plan Indicator) for the sender
+     *
+     * @param int $npi Numbering Plan Indicator
+     *
+     * @return self
+     */
+    public function fromNpi(int $npi): self
+    {
+        $this->addrNpi = $npi;
         return $this;
     }
 
@@ -136,13 +172,11 @@ final class SMPPClient
      * Method asFlash
      * Marks the message as a flash SMS
      *
-     * @param bool $flash Whether to send as flash SMS
-     *
      * @return self
      */
-    public function asFlash(bool $flash = true): self
+    public function asFlash(): self
     {
-        $this->flash = $flash;
+        $this->flash = true;
         return $this;
     }
 
@@ -154,9 +188,9 @@ final class SMPPClient
      *
      * @return self
      */
-    public function asUtf8(bool $utf8 = true): self
+    public function asUtf8(): self
     {
-        $this->utf8 = $utf8;
+        $this->utf8 = true;
         return $this;
     }
 
@@ -233,15 +267,21 @@ final class SMPPClient
         int $esmClass = 0,
         int $dataCoding = SMPP::DATA_CODING_DEFAULT
     ): PDUResponse {
-        $submitSm = new SubmitSm($this->ton, $this->npi);
+        $submitSm = new SubmitSm();
 
         $data = $submitSm->build(
-            $source,
-            $destination,
-            $message,
-            $dataCoding,
-            $optional,
-            $esmClass
+            new SubmitSmParams(
+                $source,
+                $destination,
+                $message,
+                SMPP::TON_ALPHANUMERIC,
+                SMPP::NPI_UNKNOWN,
+                SMPP::TON_INTERNATIONAL,
+                SMPP::NPI_E164,
+                $esmClass,
+                $dataCoding,
+                $optional
+            )
         );
 
         return $this->sendCommand(SMPP::SUBMIT_SM, $data);
@@ -267,7 +307,7 @@ final class SMPPClient
         $this->socket->send($packet);
 
         $start = time();
-        $timeout = 5; // segundos
+        $timeout = $this->socket->getTimeout();
 
         while (true) {
             if ((time() - $start) > $timeout) {

@@ -1,91 +1,141 @@
-# SMPP Client
+# SMPP Client PHP
 
-Permite enviar SMS utilizando el protocolo SMPP v3.4 (https://smpp.org/SMPP_v3_4_Issue1_2.pdf)
+[Documentación oficial SMPP v3.4](https://smpp.org/SMPP_v3_4_Issue1_2.pdf)
 
-**Soporta:**
+![PHP](https://img.shields.io/badge/PHP-5.6%2B-blue)
+![SMPP](https://img.shields.io/badge/SMPP-3.4-green)
+![License](https://img.shields.io/github/license/larc/smpp-client-php)
+![Status](https://img.shields.io/badge/status-stable-success)
 
-- Unicode
-- SMS Multi-part
-- SMS Flash (tipo 0)
+Cliente **SMPP v3.4** en PHP para el envío de SMS.
+Soporta **Unicode (UCS2)**, **mensajes largos (SAR)** y **SMS Flash (Class 0)**, con una API fluida y simple.
 
+---
 
+## Tabla de Contenidos
 
-## Changelog
+- [Características](#características)
+- [Instalación](#instalación)
+- [Configuración](#configuración)
+- [Envío de SMS Ejemplo](#envío-de-sms-ejemplo)
+- [SMS Flash Class 0](#sms-flash-class-0)
+- [Unicode UCS2](#unicode-ucs2)
+- [Mensajes largos](#mensajes-largos)
+- [Notas importantes](#notas-importantes)
+- [Debug y Trace](#debug-y-trace)
+- [Changelog](#changelog)
+- [Licencia](#licencia)
 
-* 2.1.0
-  * Se renombra algunas clases para que sea más claro lo que hace.
-  * Se mejora la separación de funcionlidad por clase.
-  * Se elimina la función de Bulk.
+---
 
+## Características
 
+- ✅ Compatible con **SMPP v3.4**
+- 🌍 Soporte para **GSM 7-bit** y **Unicode (UCS2)**
+- 📦 Envío automático de **SMS largos** (segmentación y concatenación SAR)
+- ⚡ Soporte para **SMS Flash (Class 0)**
+- 🔧 Configuración flexible de **TON / NPI**
+- 🧩 Arquitectura desacoplada (ideal para mocks y testing)
+- 🐘 Compatible con **PHP 5.6+**
 
-## Requerimientos
-
-PHP 5.6 o superior
-
-
+---
 
 ## Instalación
-
-Instalar via [Composer](http://getcomposer.org/):
 
 ```bash
 composer require larc/smpp-client-php
 ```
 
-Ten en cuenta:
-
-- Ejecutar `composer install` para agregar las dependencias en el directorio **vendor**
-- Añade el autoloader en tu aplicación con la línea: `require("vendor/autoload.php")`
-
-
-
 ## Configuración
 
 ```php
-require 'vendor/autoload.php';
+use Larc\SMPPClient\Config\ServerConfigBuilder;
+use Larc\SMPPClient\Protocol\SMPP;
 
-use Larc\SMPPClient\entities\{ServerConfig, SMS};
-use Larc\SMPPClient\{SMSBuilder, SMPP, Code};
-
-$config = new ServerConfig();
-$config->setHost('127.0.0.1')
-    ->setPort(1234)
-    ->setSystemId('0000')
-    ->setPassword('00000000')
-    ->setCommandId(SMPP::BIND_TRANSCEIVER)
-    ->setTon(SMPP::TON_ALPHANUMERIC)
-    ->setNpi(SMPP::NPI_PRIVATE);
+$config = ServerConfigBuilder::transceiver()
+    ->withHost('127.0.0.1')
+    ->withPort(2775)
+    ->withCredentials('system_id', 'password')
+    ->withAddrTon(SMPP::TON_ALPHANUMERIC)
+    ->withAddrNpi(SMPP::NPI_PRIVATE)
+    ->build();
 ```
 
-
-
-## Uso
-
-#### Envío de SMS onDemand (uno a uno)
+## Envío de SMS Ejemplo
 
 ```php
-$sms = new SMS();
-$sms->setSender('Name')
-    ->setRecipient('50760001000')
-    ->setMessage('Text message')
-    ->setFlash(false)
-    ->setUtf(false);
 
-$SMSBuilder = new SMSBuilder($config, $timeout, $trace);
-$res = $SMSBuilder->send($sms);
+use Larc\SMPPClient\Client\SMPPClient;
+
+$client = new SMPPClient($config);
+
+$client->from('Weblarc')
+    ->to('50760001000')
+    ->message('Texto de prueba')
+    ->send();
+
 ```
 
-
-
-#### Enviar SMS Tipo 0 o Flash
+## SMS Flash Class 0
 
 ```php
-$sms->setFlash(true);
+$client->from('Weblarc')
+    ->to('50760001000')
+    ->message('Mensaje Flash')
+    ->asFlash(true)
+    ->send();
 ```
 
+## Unicode UCS2
 
+```php
+$client->from('Weblarc')
+    ->to('50760001000')
+    ->message('¡Hola, cómo estás? ñáéíóú')
+    ->asUtf8(true)
+    ->send();
+```
 
-#### Enviar mensaje con caracteres latinos (tildes, ñ, ¿?, !¡)
+## Mensajes largos
 
-Coming Soon
+```php
+$client->from('Weblarc')
+    ->to('50760001000')
+    ->message(str_repeat('Mensaje largo ', 50))
+    ->send();
+```
+
+## Notas importantes
+
+- **send()** maneja automáticamente:
+  - Codificación
+  - Segmentación
+  - Concatenación SAR
+- Último message_id recibido:
+
+```php
+$client->getLastMessageId();
+```
+
+## Debug y Trace
+
+```php
+$client->enableTrace();
+```
+
+## Changelog
+
+### 3.0.0
+
+- Retorno del message_id
+- API fluida simplificada
+- Nuevo ServerConfigBuilder
+- Soporte completo SAR
+- Unicode y GSM7 robusto
+- SMS Flash (Class 0)
+- Refactorización interna
+- Documentación mejorada
+
+## Licencia
+
+MIT © Weblarc 2026. Develop by Luis Arcia.
