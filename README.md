@@ -82,7 +82,7 @@ $client->from('Weblarc')
 $client->from('Weblarc')
     ->to('50760001000')
     ->message('Mensaje Flash')
-    ->asFlash(true)
+    ->asFlash()
     ->send();
 ```
 
@@ -92,7 +92,7 @@ $client->from('Weblarc')
 $client->from('Weblarc')
     ->to('50760001000')
     ->message('¡Hola, cómo estás? ñáéíóú')
-    ->asUtf8(true)
+    ->asUtf8()
     ->send();
 ```
 
