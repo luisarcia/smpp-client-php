@@ -1,6 +1,4 @@
-# SMPP Client PHP
-
-[Documentación oficial SMPP v3.4](https://smpp.org/SMPP_v3_4_Issue1_2.pdf)
+# SMPP Client PHP v3.0.0
 
 ![PHP](https://img.shields.io/badge/PHP-5.6%2B-blue)
 ![SMPP](https://img.shields.io/badge/SMPP-3.4-green)
@@ -9,6 +7,8 @@
 
 Cliente **SMPP v3.4** en PHP para el envío de SMS.
 Soporta **Unicode (UCS2)**, **mensajes largos (SAR)** y **SMS Flash (Class 0)**, con una API fluida y simple.
+
+[Documentación oficial SMPP v3.4](https://smpp.org/SMPP_v3_4_Issue1_2.pdf)
 
 ---
 
@@ -121,6 +121,25 @@ $client->getLastMessageId();
 
 ```php
 $client->enableTrace();
+```
+
+```bash
+@MacBook-Pro-de-Luis smpp-client-php % php example.php
+2026-01-31 21:01:28 - >>> Building PDU [commandId: 9, status: 0, sequenceNumber: 1, body: 434c49454e543100303030303030303000534d50500034010100]
+2026-01-31 21:01:28 - <<< PDU response [commandId: 2147483657, status: 0, sequenceNumber: 1, body: 4d4f434b5f534d534300]
+2026-01-31 21:01:28 - >>> Bind OK
+2026-01-31 21:01:28 - >>> Building PDU [commandId: 4, status: 0, sequenceNumber: 2, body: 0005005765626c6172630001013530373630303031303030000000010000000000000c54657374206d657373616765]
+2026-01-31 21:01:28 - <<< PDU response [commandId: 2147483652, status: 0, sequenceNumber: 2, body: 6d73675f3137363938393332383836343000]
+2026-01-31 21:01:28 - >>> Building PDU [commandId: 6, status: 0, sequenceNumber: 3, body: ]
+2026-01-31 21:01:28 - <<< PDU response [commandId: 2147483654, status: 0, sequenceNumber: 3, body: ]
+📩 MessageId: msg_1769893288640
+2026-01-31 21:01:28 - >>> Building PDU [commandId: 9, status: 0, sequenceNumber: 1, body: 434c49454e543100303030303030303000534d50500034010100]
+2026-01-31 21:01:28 - <<< PDU response [commandId: 2147483657, status: 0, sequenceNumber: 1, body: 4d4f434b5f534d534300]
+2026-01-31 21:01:28 - >>> Bind OK
+2026-01-31 21:01:28 - >>> Building PDU [commandId: 4, status: 0, sequenceNumber: 2, body: 0005005765626c6172630001013530373630303031303030000000010000000000000c54657374206d657373616765]
+2026-01-31 21:01:28 - <<< PDU response [commandId: 2147483652, status: 0, sequenceNumber: 2, body: 6d73675f3137363938393332383836343000]
+2026-01-31 21:01:28 - >>> Building PDU [commandId: 6, status: 0, sequenceNumber: 3, body: ]
+2026-01-31 21:01:28 - <<< PDU response [commandId: 2147483654, status: 0, sequenceNumber: 3, body: ]
 ```
 
 ## Changelog
