@@ -10,102 +10,155 @@ use Larc\SMPPClient\Protocol\Sequence\SequenceNumber;
 
 /**
  * Class PDU
- * Builds and reads PDU packets for SMPP communication.
+ * Responsible for building and parsing SMPP PDUs.
+ *
  * @package Larc\SMPPClient\PDU
  */
 final class PDU
 {
+    // PDU header length in bytes
     private const HEADER_LENGTH = 16;
-    private $trace;
 
-    /**
-     * @param bool $trace Enable tracing
-     */
-    public function __construct(bool $trace = false)
+    // Trace logger instance
+    private TraceLogger $trace;
+
+    private string $buffer = '';
+
+    public function __construct(?TraceLogger $trace = null)
     {
-        $this->trace = new TraceLogger($trace);
+        $this->trace = $trace ?? new TraceLogger();
     }
 
     /**
-     * Build Method
-     * Builds a PDU packet with header and body
+     * Method build
+     * Builds a raw PDU binary string from command ID, body, and sequence number
      *
-     * @param int $commandId Command ID for the PDU
-     * @param string $body PDU body data
+     * @param int $commandId Command ID of the PDU
+     * @param string $body Binary body of the PDU
      * @param SequenceNumber $sequenceNumber Sequence number for the PDU
      *
-     * @return string The constructed PDU packet
+     * @return string Raw binary PDU
      */
     public function build(int $commandId, string $body, SequenceNumber $sequenceNumber): string
     {
-        // PDU Header length is 16 bytes
         $length = self::HEADER_LENGTH + strlen($body);
-        $header = pack('NNNN', $length, $commandId, SMPP::ESME_ROK, $sequenceNumber->value());
-        $this->trace->write(">>> Building PDU [commandId: {$commandId}, status: " . SMPP::ESME_ROK . ", sequenceNumber: {$sequenceNumber->value()}, body: " . bin2hex($body) . "]");
 
-        // Return the complete PDU packet
+        $header = pack(
+            'NNNN',
+            $length,
+            $commandId,
+            SMPP::ESME_ROK,
+            $sequenceNumber->value()
+        );
+
+        $this->trace->write(
+            ">>> Building PDU [commandId: {$commandId}, status: 0, sequenceNumber: {$sequenceNumber->value()}, body: " .
+                bin2hex($body) . "]"
+        );
+
         return $header . $body;
     }
 
     /**
-     * Read Method
-     * Reads and parses the PDU header
-     * @param string $header The PDU header to be read
-     * @return PDUResponse The parsed PDU response
+     * Method feed
+     * Feeds raw data into the PDU parser and extracts complete PDUs
+     *
+     * @param string $data Raw binary data
+     *
+     * @return array Array of PDUResponse objects
      */
-    public function read(string $pdu): PDUResponse
+    public function feed(string $data): array
     {
-        // Validates that the PDU header length is at least 16 bytes long (4 integers)
-        $headerLength = strlen($pdu);
+        $this->buffer .= $data;
+        $pdus = [];
 
-        if ($headerLength < self::HEADER_LENGTH) {
-            $this->trace->write('--- Error: PDU header too short. Length: ' . $headerLength);
+        while (strlen($this->buffer) >= self::HEADER_LENGTH) {
 
+            // leer longitud SIN consumir
+            $header = substr($this->buffer, 0, self::HEADER_LENGTH);
+            $unpacked = unpack('Nlength', $header);
+
+            if (!$unpacked || $unpacked['length'] < self::HEADER_LENGTH) {
+                $this->trace->write('--- Error: invalid PDU length');
+                $this->buffer = '';
+                break;
+            }
+
+            $length = $unpacked['length'];
+
+            if ($length > 65536) {
+                $this->trace->write('--- Error: PDU length too large');
+                $this->buffer = '';
+                break;
+            }
+
+            // aún no llegó el PDU completo
+            if (strlen($this->buffer) < $length) {
+                break;
+            }
+
+            // extraer PDU completo
+            $pduBinary = substr($this->buffer, 0, $length);
+            $this->buffer = substr($this->buffer, $length);
+
+            $pdus[] = $this->parsePdu($pduBinary);
+        }
+
+        return $pdus;
+    }
+
+    /**
+     * Method parsePdu
+     * Parses a raw PDU binary string into a PDUResponse object
+     *
+     * @param string $pdu Binary PDU string
+     *
+     * @return PDUResponse
+     */
+    private function parsePdu(string $pdu): PDUResponse
+    {
+        if (strlen($pdu) < self::HEADER_LENGTH) {
+            $this->trace->write('--- Error: PDU header too short');
             return new PDUResponse(0, SMPP::ESME_RUNKNOWNERR, 0, '', []);
         }
 
-        // parse the PDU header
-        $headerData = unpack('Nlength/NcommandId/NcommandStatus/NsequenceNumber', substr($pdu, 0, self::HEADER_LENGTH));
+        $header = unpack(
+            'Nlength/NcommandId/NcommandStatus/NsequenceNumber',
+            substr($pdu, 0, self::HEADER_LENGTH)
+        );
 
-        if ($headerData === false) {
-            $this->trace->write('--- Error unpacking PDU header.');
+        $length = $header['length'];
+        $commandId = $header['commandId'];
+        $commandStatus = $header['commandStatus'];
+        $sequenceNumber = $header['sequenceNumber'];
 
-            return new PDUResponse(0, SMPP::ESME_RUNKNOWNERR, 0, '', []);
-        }
-
-        $length = $headerData['length'];
-        $commandId = $headerData['commandId'];
-        $commandStatus = $headerData['commandStatus'];
-        $sequenceNumber = $headerData['sequenceNumber'];
-
-        // Read the PDU body from the remaining part of the PDU packet
         $body = '';
-
         if ($length > self::HEADER_LENGTH) {
             $body = substr($pdu, self::HEADER_LENGTH, $length - self::HEADER_LENGTH);
         }
 
-        $this->trace->write("<<< PDU response [commandId: {$commandId}, status: {$commandStatus}, sequenceNumber: {$sequenceNumber}, body: " . bin2hex($body) . "]");
-
-        $bodyData = $this->parseBody($commandId, $body);
+        $this->trace->write(
+            "<<< PDU response [commandId: {$commandId}, status: {$commandStatus}, sequenceNumber: {$sequenceNumber}, body: " .
+                bin2hex($body) . "]"
+        );
 
         return new PDUResponse(
             $commandId,
             $commandStatus,
             $sequenceNumber,
             $body,
-            $bodyData
+            $this->parseBody($commandId, $body)
         );
     }
-    
+
     /**
      * Method parseBody
-     * Parses the PDU body based on the command ID
+     * Parses the body of a PDU based on its command ID
      *
      * @param int $commandId Command ID of the PDU
-     * @param string $body PDU body data
+     * @param string $body Binary body of the PDU
      *
-     * @return array
+     * @return array Parsed body data
      */
     private function parseBody(int $commandId, string $body): array
     {
@@ -113,16 +166,14 @@ final class PDU
 
         switch ($commandId) {
             case SMPP::SUBMIT_SM_RESP:
-                // message_id es un string C (NULL-terminated)
-                $data['message_id'] = rtrim($body, "\0");
+                // Extrae solo hasta el primer byte nulo (C-string)
+                $data['message_id'] = explode("\0", $body, 2)[0];
                 break;
-
-            // Otros PDU que tengan body
-            case SMPP::DELIVER_SM:
-                // Aquí podrías parsear source_addr, short_message, etc.
+            case SMPP::DELIVER_SM_RESP:
+                // No body parsing implemented for this command
                 break;
             default:
-                // PDU sin body o no reconocido
+                // No body parsing implemented for this command
                 break;
         }
 

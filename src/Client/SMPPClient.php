@@ -8,16 +8,15 @@ use Larc\SMPPClient\Config\ServerConfig;
 use Larc\SMPPClient\SMPP;
 use Larc\SMPPClient\PDU\PDU;
 use Larc\SMPPClient\Interfaces\ConnectionInterface;
-use Larc\SMPPClient\debugger\TraceLogger;
+use Larc\SMPPClient\Debugger\TraceLogger;
 use Larc\SMPPClient\Protocol\Encoding\Ucs2Encoding;
 use Larc\SMPPClient\Protocol\Encoding\Gsm7Encoding;
 use Larc\SMPPClient\Protocol\Sequence\SequenceGenerator;
-use Larc\SMPPClient\Exception\ProtocolException;
 use Larc\SMPPClient\Exception\SmppException;
 use Larc\SMPPClient\PDU\PDUResponse;
 use Larc\SMPPClient\Protocol\Message\MessageSplitter;
 use Larc\SMPPClient\Protocol\SubmitSm;
-use Larc\SMPPClient\transport\SocketClient;
+use Larc\SMPPClient\Transport\SocketClient;
 
 final class SMPPClient
 {
@@ -28,9 +27,8 @@ final class SMPPClient
     private int $npi;
     private int $commandId;
     private SequenceGenerator $sequence;
-    private ?TraceLogger $trace = null;
+    private TraceLogger $trace;
 
-    // Por mensaje
     private ?string $currentSender = null;
     private ?string $currentRecipient = null;
     private ?string $messageText = null;
@@ -41,106 +39,152 @@ final class SMPPClient
 
     public function __construct(ServerConfig $config)
     {
-        $this->socket = new SocketClient($config->host(), $config->port(), 5, false);
+        $this->socket = new SocketClient($config->host(), $config->port(), 10, false);
         $this->systemId = $config->systemId();
         $this->password = $config->password();
         $this->ton = $config->ton();
         $this->npi = $config->npi();
         $this->commandId = $config->bindType();
         $this->sequence = new SequenceGenerator();
-
         $this->trace = new TraceLogger();
     }
 
+    /**
+     * Method login
+     * Establishes the SMPP connection by sending a BIND request
+     *
+     * @return bool
+     */
     public function login(): bool
     {
         $this->socket->connect();
 
         $data  = sprintf("%s\0%s\0", $this->systemId, $this->password);
         $data .= sprintf("%s\0%c", 'SMPP', SMPP::SMPP_3_4);
-        $data .= sprintf("%c%c%s\0", SMPP::TON_INTERNATIONAL, SMPP::NPI_E164, '');
+        $data .= sprintf("%c%c\0", $this->ton, $this->npi);
 
         $response = $this->sendCommand($this->commandId, $data);
 
-        if ($response && $response->commandStatus === SMPP::ESME_ROK) {
-            $this->trace?->write('>>> Bind done!');
+        if ($response->commandStatus === SMPP::ESME_ROK) {
+            $this->trace->write('>>> Bind OK');
             return true;
         }
 
-        $this->trace?->write('--- Binding error!');
         return false;
     }
-
+    
+    /**
+     * Method logout
+     * Closes the SMPP connection by sending an UNBIND request
+     *
+     * @return void
+     */
     public function logout(): void
     {
         try {
-            $response = $this->sendCommand(SMPP::UNBIND, '');
-            if ($response->commandStatus === SMPP::ESME_ROK) {
-                $this->trace?->write('>>> Unbind done');
-            } else {
-                $this->trace?->write('--- Unbind returned non-OK, SMPPSim probablemente cerró la sesión');
-            }
-        } catch (\Exception $e) {
-            // Atrapa cualquier excepción (socket cerrado, timeout, etc.)
-            $this->trace?->write('--- Unbind failed: ' . $e->getMessage());
+            $this->sendCommand(SMPP::UNBIND, '');
+        } catch (\Throwable) {
+            // Ignore errors in UNBIND
         } finally {
-            // Siempre desconectamos el socket
             $this->socket->disconnect();
         }
     }
 
+    /**
+     * Method from
+     * Sets the sender ID for the message
+     *
+     * @param string $sender Sender ID
+     *
+     * @return self
+     */
     public function from(string $sender): self
     {
         $this->currentSender = $sender;
         return $this;
     }
 
+    /**
+     * Method to
+     * Sets the recipient number for the message
+     *
+     * @param string $recipient Recipient number
+     *
+     * @return self
+     */
     public function to(string $recipient): self
     {
         $this->currentRecipient = $recipient;
         return $this;
     }
 
+    /**
+     * Method message
+     * Sets the message text to be sent
+     *
+     * @param string $text Message text
+     *
+     * @return self
+     */
     public function message(string $text): self
     {
         $this->messageText = $text;
         return $this;
     }
 
+    /**
+     * Method asFlash
+     * Marks the message as a flash SMS
+     *
+     * @param bool $flash Whether to send as flash SMS
+     *
+     * @return self
+     */
     public function asFlash(bool $flash = true): self
     {
         $this->flash = $flash;
         return $this;
     }
 
-    public function asUtf8(bool $utf = true): self
+    /**
+     * Method asUtf8
+     * Sets the message encoding to UTF-8 (UCS2)
+     *
+     * @param bool $utf8 Whether to use UTF-8 encoding
+     *
+     * @return self
+     */
+    public function asUtf8(bool $utf8 = true): self
     {
-        $this->utf8 = $utf;
+        $this->utf8 = $utf8;
         return $this;
     }
 
+    /**
+     * Method send
+     * Sends the prepared SMS message
+     *
+     * @return void
+     *
+     * @throws SmppException
+     */
     public function send(): void
     {
         if (!$this->currentSender || !$this->currentRecipient || !$this->messageText) {
-            throw new SmppException('Sender, Recipient and Message must be set before sending.');
+            throw new SmppException('Sender, recipient and message are required');
         }
 
-        // Codificación
         $encoding = $this->utf8 ? new Ucs2Encoding() : new Gsm7Encoding();
-
-        // DataCoding por mensaje
         $dataCoding = $encoding->dataCoding();
+
         if ($this->flash) {
-            $dataCoding |= 0x10; // bit flash
+            $dataCoding |= 0x10;
         }
 
-        // Codificar mensaje
         $payload = $encoding->encode($this->messageText);
-
         $splitter = new MessageSplitter();
         $segments = $splitter->split($payload, $encoding);
 
-        $lastMessageId = null;
         foreach ($segments as $segment) {
             $response = $this->submitSm(
                 $this->currentSender,
@@ -150,25 +194,45 @@ final class SMPPClient
                 $segment->esmClass(),
                 $dataCoding
             );
+
+            $this->lastMessageId = $response->bodyData['message_id'] ?? null;
         }
 
-        $this->lastMessageId = $response->message_id ?? null;
-
-        // Limpiar estado para permitir otro mensaje
-        $this->messageText = null;
-        $this->currentRecipient = null;
-        $this->flash = false;
-        $this->utf8 = false;
+        $this->resetState();
     }
 
+    /**
+     * Method getLastMessageId
+     * Retrieves the message ID of the last sent message
+     *
+     * @return string|null
+     */
     public function getLastMessageId(): ?string
     {
         return $this->lastMessageId;
     }
 
-    // --- Internals ---
-    protected function submitSm(string $source, string $destination, string $message, string $optional = '', int $esmClass = 0, int $dataCoding = SMPP::DATA_CODING_DEFAULT): PDUResponse
-    {
+    /**
+     * Method submitSm
+     * Sends a SUBMIT_SM PDU to the SMPP server
+     *
+     * @param string $source Source address
+     * @param string $destination Destination address
+     * @param string $message Message body
+     * @param string $optional Optional parameters
+     * @param int $esmClass ESM class
+     * @param int $dataCoding Data coding scheme
+     *
+     * @return PDUResponse
+     */
+    protected function submitSm(
+        string $source,
+        string $destination,
+        string $message,
+        string $optional = '',
+        int $esmClass = 0,
+        int $dataCoding = SMPP::DATA_CODING_DEFAULT
+    ): PDUResponse {
         $submitSm = new SubmitSm($this->ton, $this->npi);
 
         $data = $submitSm->build(
@@ -183,31 +247,92 @@ final class SMPPClient
         return $this->sendCommand(SMPP::SUBMIT_SM, $data);
     }
 
+    /**
+     * Method sendCommand
+     * Sends a command PDU and waits for the corresponding response
+     *
+     * @param int $commandId Command ID of the PDU
+     * @param string $data Binary body of the PDU
+     *
+     * @return PDUResponse
+     *
+     * @throws SmppException
+     */
     protected function sendCommand(int $commandId, string $data): PDUResponse
     {
-        $sequenceNumber = $this->sequence->next();
-        $pdu = new PDU($this->trace?->getState());
-        $pduPacket = $pdu->build($commandId, $data, $sequenceNumber);
+        $sequence = $this->sequence->next();
+        $pdu = new PDU($this->trace);
 
-        if (!$pduPacket) {
-            throw new SmppException('Failed to build PDU');
+        $packet = $pdu->build($commandId, $data, $sequence);
+        $this->socket->send($packet);
+
+        $start = time();
+        $timeout = 5; // segundos
+
+        while (true) {
+            if ((time() - $start) > $timeout) {
+                throw new SmppException('Timeout waiting for SMPP response');
+            }
+
+            $raw = $this->socket->receive();
+
+            if ($raw === false || $raw === '') {
+                throw new SmppException('Socket closed or empty response');
+            }
+
+            $responses = $pdu->feed($raw);
+
+            foreach ($responses as $response) {
+                if ($response->sequenceNumber === $sequence->value()) {
+                    return $response;
+                }
+            }
         }
-
-        $this->socket->send($pduPacket);
-        $rawPdu = $this->socket->receive();
-        return $pdu->read($rawPdu);
     }
 
+    /**
+     * Method resetState
+     * Resets the internal state after sending a message
+     *
+     * @return void
+     */
+    private function resetState(): void
+    {
+        $this->currentSender = null;
+        $this->currentRecipient = null;
+        $this->messageText = null;
+        $this->flash = false;
+        $this->utf8 = false;
+    }
+
+    /**
+     * Method enableTrace
+     * Enables tracing of SMPP operations
+     *
+     * @return void
+     */
     public function enableTrace(): void
     {
         $this->trace->enableTrace();
     }
 
+    /**
+     * Method disableTrace
+     * Disables tracing of SMPP operations
+     *
+     * @return void
+     */
     public function disableTrace(): void
     {
         $this->trace->disableTrace();
     }
 
+    /**
+     * Method getTraceMessages
+     * Retrieves the trace messages
+     *
+     * @return array
+     */
     public function getTraceMessages(): array
     {
         return $this->trace->getMessages();

@@ -122,47 +122,56 @@ class SocketClient implements ConnectionInterface
      *
      * @return string
      */
-    public function receive(): string
-    {
-        if ($this->socket === null) {
-            throw new SocketException('Socket is not connected.');
-        }
-
-        $data = '';
-        $read = 0;
-
-        while ($read < 16) {
-            if (feof($this->socket)) {
-                throw new SocketException('Socket connection closed by remote host.');
-            }
-
-            $chunk = fread($this->socket, 16 - $read);
-
-            if ($chunk === false) {
-                $this->trace?->write('--- PDU receive error');
-                throw new SocketException('Failed to receive PDU.');
-            }
-
-            $info = stream_get_meta_data($this->socket);
-            if ($info['timed_out']) {
-                $this->trace?->write('--- Socket read timeout');
-                throw new SocketException('Socket read timeout.');
-            }
-
-            if ($chunk === '') {
-                // evita loop infinito
-                usleep(1000);
-                continue;
-            }
-
-            $data .= $chunk;
-            $read = strlen($data);
-        }
-
-        $this->trace?->write('<<< PDU received (' . $read . ' bytes)');
-
-        return $data;
+public function receive(): string
+{
+    if ($this->socket === null) {
+        throw new SocketException('Socket is not connected.');
     }
+
+    $data = '';
+
+    // leer lo que haya disponible (TCP stream)
+    while (true) {
+
+        if (feof($this->socket)) {
+            throw new SocketException('Socket closed by remote host.');
+        }
+
+        $chunk = fread($this->socket, 8192);
+
+        if ($chunk === false) {
+            throw new SocketException('Failed to receive data from socket.');
+        }
+
+        if ($chunk === '') {
+            $meta = stream_get_meta_data($this->socket);
+
+            if ($meta['timed_out']) {
+                break; // no más datos por ahora
+            }
+
+            usleep(1000);
+            continue;
+        }
+
+        $data .= $chunk;
+
+        // si llegó algo, salimos (PDU::feed decide si está completo)
+        // if (strlen($data) > 0) {
+        //     break;
+        // }
+
+        if (strlen($data) > 1024 * 1024) {
+            throw new SocketException('Too much data without valid PDU');
+        }
+
+        break;
+    }
+
+    $this->trace?->write('<<< TCP data received (' . strlen($data) . ' bytes)');
+
+    return $data;
+}
 
 
     /**

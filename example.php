@@ -11,9 +11,9 @@ use Larc\SMPPClient\SMPP;
 
 $config = ServerConfigBuilder::transceiver()
     ->withHost('127.0.0.1')
-    ->withPort(2775)
+    ->withPort(2776)
     ->withCredentials('CLIENT1', '00000000')
-    ->withTon(SMPP::TON_ALPHANUMERIC)
+    ->withTon(SMPP::TON_INTERNATIONAL)
     ->withNpi(SMPP::NPI_E164)
     ->build();
 
@@ -31,13 +31,15 @@ if (!$smppClient->login()) {
 //            ->message('Hello, this is a test message!')
 //            ->send();
 
-$smppClient->from('12345')
-           ->to('1234567890')
+$smppClient->from('50766207384')
+           ->to('50766207383')
            ->message('Second test message')
            ->send();
+
+var_dump($smppClient->getLastMessageId());
 
 try {
     $smppClient->logout();
 } catch (\Larc\SMPPClient\Exception\ProtocolException $e) {
-    echo "Warning: UNBIND failed (SMPPSim probablemente cerró la sesión antes)\n";
+    echo "Warning: UNBIND failed\n";
 }

@@ -89,7 +89,7 @@ class TraceLogger
      *
      * @return bool
      */
-    public function getState() : bool
+    public function getState(): bool
     {
         return $this->traceEnabled;
     }
